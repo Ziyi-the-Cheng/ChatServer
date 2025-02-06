@@ -12,15 +12,34 @@
 
 std::unordered_map<SOCKET, std::string> active_users;
 
+void Broadcast_delete(std::string dname) {
+    for (auto& s : active_users) {
+        SOCKET socket = s.first;
+        send(socket, dname.c_str(), static_cast<int>(dname.size()), 0);
+    }
+}
 
-void Broadcast(SOCKET current_socket) {
+void Broadcast_user(SOCKET current_socket, std::string myName) {
     for (auto& s : active_users) {
         SOCKET socket = s.first;
         std::string name = s.second;
-        if (socket != current_socket)
-            name = "+" + name;
-        send(socket, name.c_str(), static_cast<int>(name.size()), 0);
+        name = "+" + name;
+        send(current_socket, name.c_str(), static_cast<int>(name.size()), 0);
 
+        myName = "+" + myName;
+        send(socket, myName.c_str(), static_cast<int>(myName.size()), 0);
+        std::cout << "Pushed name: " << myName << "\n";
+    }
+}
+
+void Broadcast_message(SOCKET current_socket, std::string message) {
+    message = active_users[current_socket] + ": " + message;
+    for (auto& s : active_users) {
+        SOCKET socket = s.first;
+        if (socket != current_socket) {
+            send(socket, message.c_str(), static_cast<int>(message.size()), 0);
+            std::cout << "Broadcast message: " << message << "\n";
+        }
     }
 }
 
@@ -28,29 +47,40 @@ void Broadcast(SOCKET current_socket) {
 void client_connection(SOCKET client_socket, int id) {
     char buffer[1024] = { 0 };
     int bytes_received = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+    std::cout << "User " << buffer << " joined!" << "\n";
+    Broadcast_user(client_socket, buffer);
     active_users[client_socket] = buffer;
-    std::cout << "User " << buffer << " joined!";
-    Broadcast(client_socket);
+
 
     // Step 6: Communicate with the client
     bool stop = false;
     while (!stop) {
         int bytes_received = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
         if (bytes_received > 0) {
+            if (buffer[0] == '-') {
+                active_users.erase(client_socket);
+                closesocket(client_socket);
+                Broadcast_delete(buffer);
+                std::cout << buffer << " disconnected!" << "\n";
+            }
+            else {
+                Broadcast_message(client_socket, buffer);
+            }
             buffer[bytes_received] = '\0';
             std::cout << "Received(" << id << "): " << buffer << std::endl;
 
-            // Reverse the string
-            std::string response(buffer);
-            if (client_socket == INVALID_SOCKET) {
-                stop = true;
-                std::cout << "User " << active_users[client_socket] << " disconnected!";
-            } 
-            std::reverse(response.begin(), response.end());
+            
+            //// Reverse the string
+            //std::string response(buffer);
+            //if (client_socket == INVALID_SOCKET) {
+            //    stop = true;
+            //    std::cout << "User " << *active_users[client_socket] << " disconnected!";
+            //} 
+            //std::reverse(response.begin(), response.end());
 
-            // Send the reversed string back
-            send(client_socket, response.c_str(), static_cast<int>(response.size()), 0);
-            std::cout << "Reversed string sent back to client " << id << std::endl;
+            //// Send the reversed string back
+            //send(client_socket, response.c_str(), static_cast<int>(response.size()), 0);
+            //std::cout << "Reversed string sent back to client " << id << std::endl;
         }
     }
     // Step 7: Clean up
