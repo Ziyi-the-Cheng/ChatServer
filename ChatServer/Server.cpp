@@ -12,6 +12,20 @@
 
 std::unordered_map<SOCKET, std::string> active_users;
 
+SOCKET FindSocketByUsername(const std::string& username) {
+    for (const auto& pair : active_users) {
+        if (pair.second == username) {
+            return pair.first;  // 找到对应的 SOCKET 并返回
+        }
+    }
+    return INVALID_SOCKET;  // 如果没找到，返回无效 SOCKET
+}
+
+void Private_send(SOCKET target_socket, std::string sender, std::string message) {
+    message = "#" + sender + ":" + message;
+    send(target_socket, message.c_str(), static_cast<int>(message.size()), 0);
+}
+
 void Broadcast_delete(std::string dname) {
     for (auto& s : active_users) {
         SOCKET socket = s.first;
@@ -43,14 +57,13 @@ void Broadcast_message(SOCKET current_socket, std::string message) {
     }
 }
 
-
 void client_connection(SOCKET client_socket, int id) {
     char buffer[1024] = { 0 };
     int bytes_received = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
     std::cout << "User " << buffer << " joined!" << "\n";
     Broadcast_user(client_socket, buffer);
     active_users[client_socket] = buffer;
-
+    memset(buffer, 0, sizeof(buffer));
 
     // Step 6: Communicate with the client
     bool stop = false;
@@ -63,24 +76,20 @@ void client_connection(SOCKET client_socket, int id) {
                 Broadcast_delete(buffer);
                 std::cout << buffer << " disconnected!" << "\n";
             }
+            else if (buffer[0] == '#') {
+                std::string target_user = buffer + 1;
+                char nb[1024] = { 0 };
+                int bytes = recv(client_socket, nb, sizeof(nb) - 1, 0);
+                SOCKET target_socket = FindSocketByUsername(target_user);
+                Private_send(target_socket, active_users[client_socket], nb);
+                std::cout << "Received DM from " + active_users[client_socket] << ", send to " << target_user << ": " << nb << "\n";
+            }
             else {
                 Broadcast_message(client_socket, buffer);
             }
-            buffer[bytes_received] = '\0';
             std::cout << "Received(" << id << "): " << buffer << std::endl;
 
-            
-            //// Reverse the string
-            //std::string response(buffer);
-            //if (client_socket == INVALID_SOCKET) {
-            //    stop = true;
-            //    std::cout << "User " << *active_users[client_socket] << " disconnected!";
-            //} 
-            //std::reverse(response.begin(), response.end());
-
-            //// Send the reversed string back
-            //send(client_socket, response.c_str(), static_cast<int>(response.size()), 0);
-            //std::cout << "Reversed string sent back to client " << id << std::endl;
+            memset(buffer, 0, sizeof(buffer));
         }
     }
     // Step 7: Clean up
